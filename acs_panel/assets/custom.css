@@ -1,0 +1,20 @@
+.custom-slider .rc-slider-handle {
+  width: 14px;
+  height: 14px;
+  margin-top: -5px;
+}
+
+.custom-slider .rc-slider-rail {
+  height: 4px;
+}
+
+.custom-slider .rc-slider-track {
+  height: 4px;
+}
+
+.custom-slider .rc-slider-dot {
+  width: 8px;
+  height: 8px;
+  margin-left: -4px;
+  bottom: -2px;
+}

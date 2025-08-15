@@ -1,0 +1,6 @@
+@echo off
+ECHO Activating virtual environment...
+CALL .\.venv\Scripts\activate.bat
+ECHO Starting Dash application server...
+python -m acs_panel.app
+pause
