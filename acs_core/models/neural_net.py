@@ -1,4 +1,3 @@
-
 import pandas as pd
 import numpy as np
 import torch
@@ -8,6 +7,7 @@ from sklearn.preprocessing import StandardScaler
 
 from acs_core.registries import register_model
 from acs_core.types import FeatrueName, ModelName
+
 
 # 1. 定义神经网络结构
 class SimpleMLP(nn.Module):
@@ -26,6 +26,7 @@ class SimpleMLP(nn.Module):
         out = self.fc3(out)
         return out
 
+
 # 2. 编写模型训练和预测的函数，并注册
 @register_model(ModelName("neural_net"))
 def train_and_predict_nn(df: pd.DataFrame, features: list[FeatrueName]):
@@ -43,14 +44,14 @@ def train_and_predict_nn(df: pd.DataFrame, features: list[FeatrueName]):
     # 将数据转换为PyTorch Tensors
     X_tensor = torch.FloatTensor(X_scaled)
     # PyTorch的CrossEntropyLoss期望的标签是0, 1, 2...，而我们的是-1, 0, 1，所以需要+1处理
-    y_tensor = torch.LongTensor(y) + 1
+    y_tensor = torch.LongTensor(y.astype(int))
 
     # --- 模型定义 ---
     input_size = X.shape[1]
     hidden_size = 64  # 隐藏层大小，可以调整
-    num_classes = 3   # 类别数 (-1, 0, 1)
+    num_classes = 3  # 类别数 (-1, 0, 1)
     learning_rate = 0.001
-    num_epochs = 50   # 训练轮数，可以调整
+    num_epochs = 50  # 训练轮数，可以调整
 
     model = SimpleMLP(input_size, hidden_size, num_classes)
     criterion = nn.CrossEntropyLoss()
@@ -77,5 +78,5 @@ def train_and_predict_nn(df: pd.DataFrame, features: list[FeatrueName]):
 
     # 将结果转为pandas DataFrame，并保持和项目其他模型一致的格式
     prob_df = pd.DataFrame(probabilities.numpy(), index=df.index, columns=[-1, 0, 1])
-    
+
     return prob_df
