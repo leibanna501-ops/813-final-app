@@ -49,7 +49,7 @@ def train_and_predict_nn(df: pd.DataFrame, features: list[FeatrueName]):
     # --- 模型定义 ---
     input_size = X.shape[1]
     hidden_size = 64  # 隐藏层大小，可以调整
-    num_classes = 3  # 类别数 (-1, 0, 1)
+    num_classes = 2  # 类别数 (-1, 0, 1)
     learning_rate = 0.001
     num_epochs = 50  # 训练轮数，可以调整
 
@@ -77,6 +77,6 @@ def train_and_predict_nn(df: pd.DataFrame, features: list[FeatrueName]):
         probabilities = nn.functional.softmax(logits, dim=1)
 
     # 将结果转为pandas DataFrame，并保持和项目其他模型一致的格式
-    prob_df = pd.DataFrame(probabilities.numpy(), index=df.index, columns=[-1, 0, 1])
+    prob_df = pd.DataFrame(probabilities.numpy(), index=df.index, columns=[0, 1])
 
     return prob_df
