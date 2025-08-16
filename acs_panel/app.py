@@ -39,52 +39,57 @@ DEBUG_VERSION = "v2.2.0 (Optimized)"
 PREFER_KEYWORDS = ("acs_prob", "prob", "acs")
 
 
-def _subplot_params(separate_prob_panel: bool, show_volume: bool):
+def _subplot_params(separate_prob_panel: bool, show_volume: bool, show_prob_diff: bool):
     """
-    返回: rows, row_heights, specs, prob_row, vol_row
-    - prob_row: 概率曲线所在的行号（分面板时为第2行，否则第1行）
-    - vol_row : 成交量所在行号（未显示则为 None）
+    返回: rows, row_heights, specs, prob_row, vol_row, diff_row
+    - prob_row: 概率曲线所在的行号
+    - vol_row : 成交量所在行号
+    - diff_row: 概率差值所在行号
     """
-    # 基础：仅价格+概率（同一面板）
-    rows, row_heights, specs = 1, [1.0], [[{"secondary_y": True}]]
-    prob_row, vol_row = 1, None
+    rows = 1
+    row_heights = []
+    specs = []
+    prob_row, vol_row, diff_row = 1, None, None
+
+    # Base row for price
+    specs.append([{"secondary_y": True}])
 
     if separate_prob_panel:
-        rows, row_heights, specs = (
-            2,
-            [0.25, 0.75],
-            [
-                [{"secondary_y": True}],  # 行1：价格(secondary_y 可给概率均线)
-                [{"secondary_y": False}],  # 行2：概率面板
-            ],
-        )
-        prob_row = 2
+        rows += 1
+        prob_row = rows
+        specs.append([{"secondary_y": False}])
 
     if show_volume:
-        vol_spec = {"secondary_y": True}
-        if separate_prob_panel:
-            rows, row_heights, specs = (
-                3,
-                [0.475, 0.375, 0.15],
-                [
-                    [{"secondary_y": True}],  # 行1：价格
-                    [{"secondary_y": False}],  # 行2：概率(独立面板)
-                    [vol_spec],  # 行3：量/换手
-                ],
-            )
-            prob_row, vol_row = 2, 3
-        else:
-            rows, row_heights, specs = (
-                2,
-                [0.8, 0.2],
-                [
-                    [{"secondary_y": True}],  # 行1：价格+概率
-                    [vol_spec],  # 行2：量/换手
-                ],
-            )
-            prob_row, vol_row = 1, 2
+        rows += 1
+        vol_row = rows
+        specs.append([{"secondary_y": True}])
 
-    return rows, row_heights, specs, prob_row, vol_row
+    if show_prob_diff:
+        rows += 1
+        diff_row = rows
+        specs.append([{"secondary_y": False}])
+
+    # Calculate row_heights based on the number of rows
+    if rows == 1:
+        row_heights = [1.0]
+    elif rows == 2:
+        if separate_prob_panel:
+            row_heights = [0.7, 0.3]
+        elif show_volume:
+            row_heights = [0.8, 0.2]
+        elif show_prob_diff:
+            row_heights = [0.8, 0.2]
+    elif rows == 3:
+        if separate_prob_panel and show_volume:
+            row_heights = [0.6, 0.2, 0.2]
+        elif separate_prob_panel and show_prob_diff:
+            row_heights = [0.6, 0.2, 0.2]
+        elif show_volume and show_prob_diff:
+            row_heights = [0.7, 0.15, 0.15]
+    elif rows == 4:
+        row_heights = [0.5, 0.2, 0.15, 0.15]
+
+    return rows, row_heights, specs, prob_row, vol_row, diff_row
 
 
 def _highlight_threshold(fig, x_index, series, thr, row=1, col=1):
@@ -194,6 +199,8 @@ def make_figure(
     threshold: Optional[float],
     date_start: Optional[str],
     date_end: Optional[str],
+    show_nn_prob: bool,
+    show_prob_diff: bool,
 ):
     data = df.copy()
     data["date"] = pd.to_datetime(data["date"])
@@ -217,8 +224,8 @@ def make_figure(
     )
 
     # === 统一生成子图布局 ===
-    rows, row_heights, specs, prob_row, vol_row = _subplot_params(
-        separate_prob_panel, show_volume
+    rows, row_heights, specs, prob_row, vol_row, diff_row = _subplot_params(
+        separate_prob_panel, show_volume, show_prob_diff
     )
     fig = make_subplots(
         rows=rows,
@@ -304,6 +311,24 @@ def make_figure(
         secondary_y=(not separate_prob_panel),
     )
 
+    # === 纯NN概率线 ===
+    if show_nn_prob and "acs_prob_nn_only" in data.columns:
+        fig.add_trace(
+            go.Scatter(
+                x=data.index,
+                y=data["acs_prob_nn_only"],
+                name="纯NN概率",
+                mode="lines",
+                line=dict(color="#d62728", width=2.0, dash="solid"),
+                legendgroup="prob_nn",
+                showlegend=True,
+                visible=True,
+            ),
+            row=prob_row,
+            col=1,
+            secondary_y=(not separate_prob_panel),
+        )
+
     # === 概率均线（统一行号/secondary_y） ===
     for i, w in enumerate(PROB_MA_WINDOWS):
         name, col_name = f"MA{w}", f"prob_ma_{w}"
@@ -360,6 +385,22 @@ def make_figure(
                 secondary_y=True,
             )
 
+    # === 概率差值 ===
+    if show_prob_diff and diff_row is not None and "prob_diff" in data.columns:
+        fig.add_trace(
+            go.Scatter(
+                x=data.index,
+                y=data["prob_diff"],
+                name="概率差值",
+                mode="lines",
+                line=dict(color="#9467bd", width=1.5, dash="dot"),
+                legendgroup="prob_diff",
+                showlegend=True,
+            ),
+            row=diff_row,
+            col=1,
+        )
+
     # === 布局/坐标轴（与原参数一致） ===
     stock_code = title.split("_")[0] if title else ""
     fig.update_layout(
@@ -383,11 +424,11 @@ def make_figure(
         annotations=[
             dict(
                 text=stock_code,
-                align="right",
+                align="center",
                 showarrow=False,
                 xref="paper",
                 yref="paper",
-                x=1.00,
+                x=0.5,
                 y=1.07,
                 font=dict(size=14, color="#6C757D"),
             )
@@ -425,6 +466,14 @@ def make_figure(
             secondary_y=True,
             rangemode="tozero",
             color="#FFBF00",
+            showgrid=False,
+        )
+    if show_prob_diff and diff_row is not None:
+        fig.update_yaxes(
+            title_text="概率差值",
+            row=diff_row,
+            col=1,
+            color="#9467bd",
             showgrid=False,
         )
 
@@ -533,16 +582,16 @@ def build_app(title_default: str, root_dir: str):
         return f"{y:04d}-{m:02d}-{min(d, _days_in_month(y, m)):02d}"
 
     _now = pd.Timestamp.today()
-    year_opts = [{"label": f"{y} 年", "value": y} for y in range(2005, _now.year + 1)]
-    month_opts = [{"label": f"{m:02d} 月", "value": m} for m in range(1, 13)]
+    year_opts = [{"label": f"{y}", "value": y} for y in range(2005, _now.year + 1)]
+    month_opts = [{"label": f"{m:02d}", "value": m} for m in range(1, 13)]
     start_y, start_m, start_d = 2019, 1, 1
     end_y, end_m, end_d = _now.year, _now.month, _now.day
     start_day_opts = [
-        {"label": f"{d:02d} 日", "value": d}
+        {"label": f"{d:02d}", "value": d}
         for d in range(1, _days_in_month(start_y, start_m) + 1)
     ]
     end_day_opts = [
-        {"label": f"{d:02d} 日", "value": d}
+        {"label": f"{d:02d}", "value": d}
         for d in range(1, _days_in_month(end_y, end_m) + 1)
     ]
 
@@ -745,6 +794,8 @@ def build_app(title_default: str, root_dir: str):
                                 options=[
                                     {"label": "单独概率面板", "value": "separate"},
                                     {"label": "成交量面板", "value": "showvol"},
+                                    {"label": "显示纯NN概率", "value": "show_nn_prob"},
+                                    {"label": "显示概率差值", "value": "show_prob_diff"},
                                 ],
                                 value=["separate", "showvol"],
                                 style={"marginBottom": "15px"},
@@ -754,6 +805,18 @@ def build_app(title_default: str, root_dir: str):
                                     "fontSize": "13px",
                                 },
                             ),
+                            # --- 权重滑块 ---
+                            html.Label("神经网络权重", style=LABEL_STYLE),
+                            dcc.Slider(
+                                id="nn-weight-slider",
+                                min=0.0,
+                                max=1.0,
+                                step=0.05,
+                                value=0.0,
+                                marks={i/10: str(i/10) for i in range(0, 11, 2)},
+                                className="custom-slider",
+                            ),
+                            html.Div(style={"height": "12px"}),
                             # --- 阈值滑块 ---
                             html.Label("概率阈值高亮 (≥)", style=LABEL_STYLE),
                             dcc.Slider(
@@ -903,11 +966,12 @@ def build_app(title_default: str, root_dir: str):
             State("end-year", "value"),
             State("end-month", "value"),
             State("end-day", "value"),
+            State("nn-weight-slider", "value"),
         ],
         prevent_initial_call=True,
     )
     def on_load_or_compute(
-        n_load, n_comp, csv_path, code, root_dir, sy, sm, sd, ey, em, ed
+        n_load, n_comp, csv_path, code, root_dir, sy, sm, sd, ey, em, ed, nn_weight
     ):
         trig = (
             dash_ctx.triggered_id
@@ -933,9 +997,10 @@ def build_app(title_default: str, root_dir: str):
 
                 cfg = PipelineConfig()
                 cfg.output.root = root
+                cfg.extras['nn_weight'] = nn_weight
 
                 debug_lines.append(
-                    f"[compute] 调用 acs_core.pipeline.compute, symbol={code}"
+                    f"[compute] 调用 acs_core.pipeline.compute, symbol={code}, nn_weight={nn_weight}"
                 )
                 result = acs_compute(str(code).strip(), start_iso, end_iso, cfg)
 
@@ -957,7 +1022,7 @@ def build_app(title_default: str, root_dir: str):
                     or isinstance(metrics.get("auc_raw"), float)
                     else ""
                 )
-                note = f"✅ 运算完成: {saved_path}｜模式: {metrics.get('mode','?')}" + auc_part
+                note = f"✅ 运算完成: {saved_path}｜模式: {metrics.get('mode','?')} " + auc_part
                 debug_lines.append(f"[done] {note}")
                 return (
                     data_json, saved_path, ttl, str(time.time()), "", note, "\n".join(debug_lines),
@@ -1028,7 +1093,7 @@ def build_app(title_default: str, root_dir: str):
 
         # All lines are generated, visibility is controlled by legend click
         # Default visible lines
-        visible_prob = {"概率", "MA5", "MA10", "MA20", "MA30", "MA60", "MA120"}
+        visible_prob = {"概率", "MA10", "MA60"}
         visible_price_ma = {5, 20, 60}
 
         fig = make_figure(
@@ -1042,6 +1107,8 @@ def build_app(title_default: str, root_dir: str):
             thr,
             start_iso,
             end_iso,
+            "show_nn_prob" in (opts or []),
+            "show_prob_diff" in (opts or []),
         )
         fig.update_layout(uirevision=uirevision)  # Apply uirevision
         return fig
@@ -1056,14 +1123,27 @@ def build_app(title_default: str, root_dir: str):
         if not relayout_data or not data_json or not current_fig:
             return no_update
 
+        # Bugfix: In Dash 1.19 / Plotly 5+, zooming on a chart with a
+        # secondary Y-axis can inject an invalid `yaxis2` property
+        # into `rangeslider`. We remove it before reconstructing the figure.
+        if (
+            current_fig.get("layout", {})
+            .get("xaxis", {})
+            .get("rangeslider", {})
+            .get("yaxis2")
+        ):
+            del current_fig["layout"]["xaxis"]["rangeslider"]["yaxis2"]
+
         fig = go.Figure(current_fig)
 
-        # 双击还原
+        # On double-click, restore auto-range for both Y-axes
         if relayout_data.get("xaxis.autorange"):
             fig.update_layout(yaxis={"autorange": True})
+            if "yaxis2" in fig.layout:
+                fig.update_layout(yaxis2={"autorange": True})
             return fig
 
-        # 非缩放事件
+        # Ignore events that are not zoom/pan
         if (
             "xaxis.range[0]" not in relayout_data
             or "xaxis.range[1]" not in relayout_data
@@ -1082,13 +1162,40 @@ def build_app(title_default: str, root_dir: str):
             if visible_df.empty:
                 return no_update
 
+            # Adjust primary Y-axis (price)
             y_min, y_max = visible_df["low"].min(), visible_df["high"].max()
             pad = (y_max - y_min) * 0.05
             fig.update_layout(
                 yaxis={"autorange": False, "range": [y_min - pad, y_max + pad]}
             )
+
+            # Adjust secondary Y-axis (probability) if it exists
+            if "yaxis2" in fig.layout:
+                prob_traces = [
+                    t
+                    for t in fig.data
+                    if t.yaxis == "y2" and t.visible is not None and t.visible != "legendonly"
+                ]
+                if prob_traces:
+                    y2_min, y2_max = 1.0, 0.0
+                    for t in prob_traces:
+                        trace_y = pd.Series(t.y, index=pd.to_datetime(t.x))
+                        visible_y = trace_y.loc[x_start:x_end]
+                        if not visible_y.empty:
+                            y2_min = min(y2_min, visible_y.min())
+                            y2_max = max(y2_max, visible_y.max())
+
+                    if y2_max > y2_min:
+                        pad2 = (y2_max - y2_min) * 0.1  # More padding for probability axis
+                        fig.update_layout(
+                            yaxis2={
+                                "autorange": False,
+                                "range": [max(0, y2_min - pad2), min(1, y2_max + pad2)],
+                            }
+                        )
             return fig
         except (KeyError, TypeError, ValueError):
+            # Silently fail on any error, do not update the chart
             return no_update
 
     return app

@@ -78,7 +78,7 @@ def compute(symbol: str, start, end, cfg: PipelineConfig) -> Dict[str, Any]:
         min_rows_insample=cfg.trend.min_rows_insample,
         feature_lag=cfg.data.feature_lag,
     )
-    prob_trend = trend.proba
+    prob_trend_raw = trend.proba
 
     # 5) 反应头（可选）
     if cfg.reactive.use and fast_df.shape[1] > 0:
@@ -90,7 +90,7 @@ def compute(symbol: str, start, end, cfg: PipelineConfig) -> Dict[str, Any]:
             lambda_decay=cfg.reactive.lambda_decay,
         )
     else:
-        prob_react = prob_trend.copy()
+        prob_react = prob_trend_raw.copy()
 
     # 2) 为神经网络准备数据和特征
     # 注意：只选用为 NN 配置的特征列，然后 join 标签，再 dropna，以保留最多数据
@@ -100,19 +100,21 @@ def compute(symbol: str, start, end, cfg: PipelineConfig) -> Dict[str, Any]:
 
     # 如果有效数据过少，则跳过 NN，返回原始趋势概率
     if df_nn.shape[0] < 20:  # 不少于20条才跑，否则意义不大
-        prob_nn = pd.Series(np.nan, index=prob_trend.index)
+        prob_nn = pd.Series(np.nan, index=prob_trend_raw.index)
     else:
         prob_nn_df = train_and_predict_nn_v2(
             df_nn, features=nn_feature_cols,  # 使用为 NN 单独配置的特征列表
             n_splits=5, epochs=120, hidden=128, num_blocks=4
         )
-        prob_nn = prob_nn_df[1].reindex(prob_trend.index).fillna(method="ffill")
+        prob_nn = prob_nn_df[1].reindex(prob_trend_raw.index).fillna(method="ffill")
         nn_was_used = True
+
+    prob_diff = prob_trend_raw - prob_nn
 
     # 3) 取“做多(1类)”概率并加权融合
     w = float(cfg.extras.get("nn_weight", 0.5))
     # 融合：有 NN 结果的地方用加权平均，没有的地方（NaN）直接用 prob_trend
-    prob_trend = ((1 - w) * prob_trend + w * prob_nn).fillna(prob_trend)
+    prob_trend = ((1 - w) * prob_trend_raw + w * prob_nn).fillna(prob_trend_raw)
 
     # 6) 融合 + 止损
     atr_series = (
@@ -132,7 +134,7 @@ def compute(symbol: str, start, end, cfg: PipelineConfig) -> Dict[str, Any]:
     price_ma_windows = [5, 10, 20, 60, 120, 200]
     prob_ma_windows = [5, 10, 20, 30, 60, 120]
 
-    series_dict = {"acs_prob": prob}
+    series_dict = {"acs_prob": prob, "acs_prob_nn_only": prob_nn, "prob_diff": prob_diff}
     series_dict.update(
         {f"price_ma_{w}": mkt["close"].rolling(w).mean() for w in price_ma_windows}
     )
@@ -166,6 +168,7 @@ def compute(symbol: str, start, end, cfg: PipelineConfig) -> Dict[str, Any]:
     metrics['nn_used'] = nn_was_used
     series_meta = {
         "prob": prob,
+        "acs_prob_nn_only": prob_nn,
         **{k: v for k, v in series_df.items() if "prob_ma" in k},
         **{k: v for k, v in series_df.items() if "price_ma" in k},
         "dist_ytd_avwap": fast_df.get("dist_ytd_avwap", pd.Series(index=prob.index)),
