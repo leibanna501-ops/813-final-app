@@ -92,24 +92,35 @@ def compute(symbol: str, start, end, cfg: PipelineConfig) -> Dict[str, Any]:
     else:
         prob_react = prob_trend_raw.copy()
 
-    # 2) 为神经网络准备数据和特征
-    # 注意：只选用为 NN 配置的特征列，然后 join 标签，再 dropna，以保留最多数据
+    # 2) 为神经网络准备数据和特征（修复：不再 ffill；仅在交集日期计算差值）
     nn_feature_cols = cfg.features.enabled_for_nn
     df_nn = feat_df[nn_feature_cols].join(label.rename("label")).dropna()
-    nn_was_used = False  # NN 是否被使用的标志
+    nn_was_used = False
 
-    # 如果有效数据过少，则跳过 NN，返回原始趋势概率
-    if df_nn.shape[0] < 20:  # 不少于20条才跑，否则意义不大
+    if df_nn.shape[0] < 20:
         prob_nn = pd.Series(np.nan, index=prob_trend_raw.index)
     else:
         prob_nn_df = train_and_predict_nn_v2(
-            df_nn, features=nn_feature_cols,  # 使用为 NN 单独配置的特征列表
+            df_nn, features=nn_feature_cols,
             n_splits=5, epochs=120, hidden=128, num_blocks=4
         )
-        prob_nn = prob_nn_df[1].reindex(prob_trend_raw.index).fillna(method="ffill")
+        # 关键：禁止 ffill；只做索引对齐
+        prob_nn = prob_nn_df[1].reindex(prob_trend_raw.index)
         nn_was_used = True
+        
+    # 中文注释：找到 NN 概率最后一个非 NaN 的日期，以及之后连续 NaN 的数量
+    last_nn_day = prob_nn[prob_nn.notna()].index.max()
+    tail_nan_days = prob_nn.loc[last_nn_day:].isna().sum()
+    print("NN最后有值的日期 =", last_nn_day, "；之后NaN天数 =", tail_nan_days)
 
-    prob_diff = prob_trend_raw - prob_nn
+    # 仅在交集日期计算差值，避免错位和“尾部直线”
+    common_idx = prob_trend_raw.index.intersection(prob_nn.index)
+    prob_diff = pd.Series(np.nan, index=prob_trend_raw.index, dtype=float)
+    prob_diff.loc[common_idx] = prob_trend_raw.loc[common_idx] - prob_nn.loc[common_idx]
+
+
+    nn_was_used = True
+
 
     # 3) 取“做多(1类)”概率并加权融合
     w = float(cfg.extras.get("nn_weight", 0.5))
@@ -129,6 +140,25 @@ def compute(symbol: str, start, end, cfg: PipelineConfig) -> Dict[str, Any]:
         sell_thr=cfg.blend.sell_thr,
         atr_k=cfg.blend.atr_k,
     )
+
+    # 6.1) （可选）按交易日对齐并对“最终概率”做有限前向填补
+    # 说明：仅对输出层prob做ffill，避免对特征/标签做填充引入信息泄露。
+    try:
+        if getattr(cfg.output, "ffill_prob_days", 0) and cfg.output.ffill_prob_days > 0:
+            # 对齐到交易日（以mkt起止范围+end截取）
+            with open("data/trade_dates.json", "r", encoding="utf-8") as f:
+                _all_trade_dates = pd.to_datetime(pd.Series(json.load(f)))
+            # 统一索引区间
+            _idx = _all_trade_dates[
+                (_all_trade_dates >= mkt.index.min()) &
+                (_all_trade_dates <= pd.to_datetime(end))
+            ]
+            # 仅对prob做有限前向填补；mkt保持NaN以暴露缺数据事实
+            prob = prob.reindex(_idx).ffill(limit=cfg.output.ffill_prob_days)
+            # 底层K线也对齐，方便前端绘图统一X轴
+            mkt = mkt.reindex(_idx)
+    except Exception as _e:
+        print("[Warn] prob ffill/reindex failed:", _e)
 
     # 7) 预计算所有可视化序列
     price_ma_windows = [5, 10, 20, 60, 120, 200]

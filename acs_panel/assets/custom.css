@@ -18,3 +18,111 @@
   margin-left: -4px;
   bottom: -2px;
 }
+
+/* === 扁平化 Dropdown 统一高度/圆角，并修复奇怪竖条 === */
+#sidebar .Select-control{
+  height: 36px !important;
+  border: 1px solid #e5e7eb !important;
+  border-radius: 10px !important;
+  box-shadow: none !important;
+  background: #fff !important;
+}
+
+/* 内容垂直居中 */
+#sidebar .Select-placeholder,
+#sidebar .Select--single > .Select-control .Select-value{
+  line-height: 36px !important;
+  padding-left: 10px !important;
+  color: #111827;
+}
+
+/* 去掉 dropdown 内部输入框的边框/阴影，避免出现竖条 */
+#sidebar .Select .Select-input { height: 36px !important; }
+#sidebar .Select .Select-input input{
+  line-height: 36px !important;
+  box-shadow: none !important;
+  border: none !important;
+  padding: 0 !important;
+}
+
+/* 展开时、悬停时边框颜色轻微变化 */
+#sidebar .Select.is-focused > .Select-control,
+#sidebar .Select-control:hover{
+  border-color: #d1d5db !important;
+}
+
+/* 菜单圆角与阴影 */
+#sidebar .Select-menu-outer{
+  border-radius: 10px !important;
+  box-shadow: 0 8px 24px rgba(0,0,0,0.06) !important;
+  border: 1px solid #e5e7eb !important;
+}
+
+/* 文本/输入统一：避免全局 input 样式影响到 react-select 内部输入框 */
+#sidebar input[type="text"],
+#sidebar textarea{
+  border: 1px solid #e5e7eb !important;
+  border-radius: 10px !important;
+}
+
+
+/* === 扁平化侧栏 === */
+.sidebar { font-family: -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif; }
+#sidebar h3 { margin: 2px 0 10px; font-weight: 650; }
+#sidebar h4 { margin: 14px 0 8px; font-weight: 600; font-size: 14px; color: #1f2937; }
+#sidebar label { font-size: 12px; color: #6b7280; }
+
+/* 输入/下拉：轻边框、圆角、悬浮无强边线 */
+#sidebar .dash-input, 
+#sidebar input, 
+#sidebar textarea { 
+  border: 1px solid #e5e7eb !important; 
+  border-radius: 8px !important; 
+  box-shadow: none !important;
+}
+
+/* Dropdown（react-select） */
+#sidebar .Select-control {
+  border: 1px solid #e5e7eb !important;
+  border-radius: 8px !important;
+  box-shadow: none !important;
+}
+#sidebar .Select-control:hover { border-color: #d1d5db !important; }
+
+/* 按钮：圆角 + 扁平悬浮 */
+#sidebar button, #btn-toggle-sidebar {
+  border-radius: 10px !important;
+  box-shadow: none !important;
+}
+
+/* 组与留白：用间距代替分割线 */
+#sidebar .section { margin: 10px 0; padding: 4px 0; }
+
+/* 统一按钮尺寸、圆角与态 */
+#sidebar button{
+  height:36px; border-radius:10px; padding:0 14px; font-size:14px;
+}
+
+/* 置顶动作条的毛玻璃效果兼容 */
+@supports not (backdrop-filter: blur(4px)) {
+  #sidebar { background: #fff; }
+}
+
+/* Dropdown 细节（若箭头区域仍显宽） */
+#sidebar .Select-arrow-zone { width: 28px !important; }
+
+/* 滚动条更细（可选） */
+#sidebar::-webkit-scrollbar { width: 8px; }
+#sidebar::-webkit-scrollbar-thumb { background: #e5e7eb; border-radius: 8px; }
+/* 顶部动作条的渐隐过渡，解决“割裂感” */
+#action-bar{
+  position: sticky; top: 0; z-index: 10000;
+}
+#action-bar::after{
+  content: ""; position: absolute; left: 0; right: 0; bottom: -6px; height: 6px;
+  background: linear-gradient(to bottom, rgba(255,255,255,0.8), rgba(255,255,255,0));
+  pointer-events: none;
+}
+
+/* 三按钮等高等宽（防止外部覆盖） */
+#action-bar button{ height:36px; min-width:88px; border-radius:10px; }

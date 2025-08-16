@@ -95,6 +95,7 @@ class OutputConfig:
     save_series_json: bool = True
     save_metrics_json: bool = True
     run_subdir: Optional[str] = None  # 不设则按 symbol 自动创建
+    ffill_prob_days: int = 0  # 产出层概率允许前向填补的天数（0=不填补）
 
 
 @dataclass
