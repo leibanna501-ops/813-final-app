@@ -13,7 +13,7 @@ from .registries import FEATURE_REGISTRY, FEATURE_FAST_REGISTRY
 from .models.trend import fit_trend_head
 from .models.reactive import fit_reactive_head
 from .models.blend import blend_prob_with_vol, force_exit_rule
-from .models.neural_net import train_and_predict_nn  # 新增：你的神经网络
+
 # 1) 导入
 from .models.neural_net_v2 import train_and_predict_nn_v2
 
