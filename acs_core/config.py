@@ -66,6 +66,15 @@ class FeatureConfig:
             "regime_prob",
         ]
     )
+    # 为神经网络单独配置的特征集，移除了长周期特征以保证数据量
+    enabled_for_nn: List[str] = field(
+        default_factory=lambda: [
+            # 使用最小安全特征集进行调试
+            "slope_mid",        # ~30天回看
+            "below_avwap_evt",  # 内部 fillna(0)
+            "cooldown_penalty", # 内部 fillna(0)
+        ]
+    )
     enabled_fast: List[str] = field(
         default_factory=lambda: [
             "ret_1d",

@@ -117,20 +117,35 @@ def fetch_daily(symbol: str, start, end, cfg: DataConfig) -> pd.DataFrame:
     df = ak.stock_zh_a_hist(symbol=symbol, period="daily", start_date=start_str, end_date=end_str, adjust=cfg.adjust)
     if df is None or df.empty: raise RuntimeError("akshare 返回空数据")
 
-    rename = {"日期": "date", "开盘": "open", "收盘": "close", "最高": "high", "最低": "low", "成交量": "volume", "成交额": "amount", "均价": "avg", "换手率": "turnover"}
+    rename = {
+        "日期": "date", "开盘": "open", "收盘": "close", "最高": "high", "最低": "low",
+        "成交量": "volume", "成交额": "amount", "均价": "avg", "换手率": "turnover"
+    }
     df = df.rename(columns=rename)
     df["date"] = pd.to_datetime(df["date"])
     df = df.sort_values("date").set_index("date")
 
-    for c in ["open", "high", "low", "close", "volume", "amount", "avg", "turnover"]:
-        if c in df.columns: df[c] = _to_float(df[c])
+    # —— 将数值列转为浮点；turnover 可能是 '3.21%' 这样的字符串 —— 
+    for c in ["open", "high", "low", "close", "volume", "amount", "avg"]:
+        if c in df.columns:
+            df[c] = pd.to_numeric(df[c], errors="coerce").astype(float)
+
+    # 专门处理换手率：去掉 '%' 并转成小数；失败就留空（不作为必需列）
+    if "turnover" in df.columns:
+        s = df["turnover"].astype(str).str.replace("%", "", regex=False)
+        df["turnover"] = pd.to_numeric(s, errors="coerce") / 100.0
 
     df = df.replace([np.inf, -np.inf], np.nan)
-    need = [c for c in ["open", "high", "low", "close", "volume", "turnover"] if c in df.columns]
+
+    # —— 只把 K 线与量作为“必需列”，避免换手率导致整表被 drop —— 
+    need = [c for c in ["open", "high", "low", "close", "volume"] if c in df.columns]
     df = df.dropna(subset=need)
+
+    # 若仍然为空，就不要写缓存，直接报错，便于追查
+    if df.empty:
+        raise RuntimeError("fetch_daily 得到空表，请检查代码与数据源参数。")
 
     # 写入缓存
     df.to_parquet(cache_path)
     print(f"[Cache] Saved to {cache_path}")
-
     return df

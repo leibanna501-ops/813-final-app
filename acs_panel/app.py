@@ -943,8 +943,11 @@ def build_app(title_default: str, root_dir: str):
                 saved_path = result["paths"].get("csv", "N/A")
                 metrics = result["metrics"]
 
-                prob_stats = df_res["acs_prob"].describe().to_string()
-                debug_lines.append("[debug] `acs_prob` column stats:\n" + prob_stats)
+                # 根据 pipeline 返回的 metrics 更新调试信息
+                if metrics.get('nn_used', False):
+                    debug_lines.append("[info] 神经网络模型已启用")
+                else:
+                    debug_lines.append("[info] 数据量不足，跳过神经网络模型")
 
                 data_json = df_res.to_json(orient="split", date_format="iso")
                 ttl = os.path.splitext(os.path.basename(saved_path))[0]

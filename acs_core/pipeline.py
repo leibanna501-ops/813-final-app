@@ -3,6 +3,7 @@
 # 统一管线：取数→特征→标签→趋势头→（可选）反应头→融合→止损→导出标准产物
 import os, json
 import pandas as pd
+import numpy as np
 from typing import Dict, Any
 from .config import PipelineConfig
 from .io_utils import write_csv, write_json, ensure_dir
@@ -13,7 +14,8 @@ from .models.trend import fit_trend_head
 from .models.reactive import fit_reactive_head
 from .models.blend import blend_prob_with_vol, force_exit_rule
 from .models.neural_net import train_and_predict_nn  # 新增：你的神经网络
-
+# 1) 导入
+from .models.neural_net_v2 import train_and_predict_nn_v2
 
 def _series_spec_dict(series: Dict[str, pd.Series]) -> Dict[str, Any]:
     """把可视化序列打包成可供 UI 消费的规范：名称→元数据"""
@@ -90,6 +92,28 @@ def compute(symbol: str, start, end, cfg: PipelineConfig) -> Dict[str, Any]:
     else:
         prob_react = prob_trend.copy()
 
+    # 2) 为神经网络准备数据和特征
+    # 注意：只选用为 NN 配置的特征列，然后 join 标签，再 dropna，以保留最多数据
+    nn_feature_cols = cfg.features.enabled_for_nn
+    df_nn = feat_df[nn_feature_cols].join(label.rename("label")).dropna()
+    nn_was_used = False  # NN 是否被使用的标志
+
+    # 如果有效数据过少，则跳过 NN，返回原始趋势概率
+    if df_nn.shape[0] < 20:  # 不少于20条才跑，否则意义不大
+        prob_nn = pd.Series(np.nan, index=prob_trend.index)
+    else:
+        prob_nn_df = train_and_predict_nn_v2(
+            df_nn, features=nn_feature_cols,  # 使用为 NN 单独配置的特征列表
+            n_splits=5, epochs=120, hidden=128, num_blocks=4
+        )
+        prob_nn = prob_nn_df[1].reindex(prob_trend.index).fillna(method="ffill")
+        nn_was_used = True
+
+    # 3) 取“做多(1类)”概率并加权融合
+    w = float(cfg.extras.get("nn_weight", 0.5))
+    # 融合：有 NN 结果的地方用加权平均，没有的地方（NaN）直接用 prob_trend
+    prob_trend = ((1 - w) * prob_trend + w * prob_nn).fillna(prob_trend)
+
     # 6) 融合 + 止损
     atr_series = (
         fast_df["atr14"]
@@ -139,6 +163,7 @@ def compute(symbol: str, start, end, cfg: PipelineConfig) -> Dict[str, Any]:
         "mode": trend.mode,
         "calibration": trend.calibration,
     }
+    metrics['nn_used'] = nn_was_used
     series_meta = {
         "prob": prob,
         **{k: v for k, v in series_df.items() if "prob_ma" in k},
